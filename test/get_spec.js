@@ -56,11 +56,19 @@ describe('jsonld.get', function() {
     var nested = helper.getFixture('nested.json');
 
     db.jsonld.put(nested, function(err, obj) {
-      db.jsonld.get(obj['@id'], { '@context': obj['@context'] }, function(err, result) {
-        delete result['knows'][0]['@id'];
-        delete result['knows'][1]['@id'];
-        expect(result).to.eql(nested);
-        done();
+      console.log("put nested")
+      console.log(JSON.stringify(obj, true, 2))
+      db.get({}, function(err, triples) {
+        console.log(triples)
+        db.jsonld.get(obj['@id'], { '@context': obj['@context'] }, function(err, result) {
+          console.log("result");
+          console.log(result);
+          delete result['knows'][0]['@id'];
+          delete result['knows'][1]['@id'];
+          expect(result).to.eql(nested);
+          done();
+        });
+
       });
     });
   });

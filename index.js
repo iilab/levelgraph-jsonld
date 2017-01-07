@@ -24,56 +24,69 @@ function levelgraphJSONLD(db, jsonldOpts) {
   function doPut(obj, options, callback) {
     var blanks = {};
 
-    jsonld.toRDF(obj, options, function(err, triples) {
-      if (err || triples.length === 0) {
-        return callback(err, null);
+    jsonld.expand(obj, function(err, expanded) {
+      console.log("[graphdb.jsonld.put] expanded");
+      console.log(JSON.stringify(expanded, true, 2));
+      if (err) {
+        return callback && callback(err);
       }
 
-      var stream = graphdb.putStream();
+      jsonld.toRDF(expanded, options, function(err, triples) {
+        if (err || triples.length === 0) {
+          return callback(err, null);
+        }
 
-      stream.on('error', callback);
-      stream.on('close', function() {
-        callback(null, obj);
-      });
+        var stream = graphdb.putStream();
 
-      triples['@default'].map(function(triple) {
+        stream.on('error', callback);
+        stream.on('close', function() {
+          callback(null, obj);
+        });
 
-        return ['subject', 'predicate', 'object'].reduce(function(acc, key) {
-          var node = triple[key];
-          // generate UUID to identify blank nodes
-          // uses type field set to 'blank node' by jsonld.js toRDF()
-          if (node.type === 'blank node') {
-            if (!blanks[node.value]) {
-              blanks[node.value] = '_:' + uuid.v1();
+        triples['@default'].map(function(triple) {
+
+          return ['subject', 'predicate', 'object'].reduce(function(acc, key) {
+            var node = triple[key];
+            // generate UUID to identify blank nodes
+            // uses type field set to 'blank node' by jsonld.js toRDF()
+            if (node.type === 'blank node') {
+              if (!blanks[node.value]) {
+                blanks[node.value] = '_:' + uuid.v1();
+              }
+              node.value = blanks[node.value];
             }
-            node.value = blanks[node.value];
-          }
-          // preserve object data types using double quotation for literals
-          // and don't keep data type for strings without defined language
-          if(key === 'object' && triple.object.datatype){
-            if(triple.object.datatype.match(XSDTYPE)){
-              if(triple.object.datatype === 'http://www.w3.org/2001/XMLSchema#string'){
-                node.value = '"' + triple.object.value + '"';
+            // preserve object data types using double quotation for literals
+            // and don't keep data type for strings without defined language
+            if(key === 'object' && triple.object.datatype){
+              if(triple.object.datatype.match(XSDTYPE)){
+                if(triple.object.datatype === 'http://www.w3.org/2001/XMLSchema#string'){
+                  node.value = '"' + triple.object.value + '"';
+                } else {
+                  node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
+                }
+              } else if(triple.object.datatype.match(RDFLANGSTRING)){
+                node.value = '"' + triple.object.value + '"@' + triple.object.language;
               } else {
                 node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
               }
-            } else if(triple.object.datatype.match(RDFLANGSTRING)){
-              node.value = '"' + triple.object.value + '"@' + triple.object.language;
-            } else {
-              node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
             }
-          }
-          acc[key] = node.value;
-          return acc;
-        }, {});
-      }).forEach(function(triple) {
-        stream.write(triple);
+            acc[key] = node.value;
+            return acc;
+          }, {});
+        }).forEach(function(triple) {
+          stream.write(triple);
+        });
+        stream.end();
       });
-      stream.end();
+
     });
   }
 
   graphdb.jsonld.put = function(obj, options, callback) {
+
+    console.log("[graphdb.jsonld.put] options");
+    console.log(options);
+
     if (typeof obj === 'string') {
       obj = JSON.parse(obj);
     }
@@ -84,51 +97,134 @@ function levelgraphJSONLD(db, jsonldOpts) {
     }
 
     options.base = options.base || this.options.base;
+    options.append = options.append || false;
+    options.update = options.update || false;
 
-    if (obj['@id']) {
-      graphdb.jsonld.del(obj['@id'], options, function(err) {
+    if (!obj['@id'] && !obj['@graph']) {
+      obj['@id'] = options.base + uuid.v1();
+      options.append = true;
+    }
+
+    if (options.base) {
+      if (obj['@context']) {
+        obj['@context']['@base'] = options.base;
+      } else {
+        obj['@context'] = { '@base' : options.base };
+      }
+    }
+
+    console.log("[graphdb.jsonld.put] obj");
+    console.log(obj);
+
+    if (options.append) {
+      doPut(obj, options, callback);
+    } else if (options.update) {
+      graphdb.jsonld.del(obj, options, function(err) {
         if (err) {
+          // console.log("levelgraph-jsonld.put: error in delete")
+          // console.log(err)
           return callback && callback(err);
         }
         doPut(obj, options, callback);
       });
     } else {
-      obj['@id'] = options.base + uuid.v1();
-      doPut(obj, options, callback);
+      graphdb.jsonld.del(obj, options, function(err) {
+        if (err) {
+          // console.log("levelgraph-jsonld.put: error in delete")
+          // console.log(err)
+          return callback && callback(err);
+        }
+        doPut(obj, options, callback);
+      });
     }
   };
 
-  graphdb.jsonld.del = function(iri, options, callback) {
+  graphdb.jsonld.del = function(obj, options, callback) {
+    console.log("levelgraph-jsonld.del")
+    console.log("obj")
+    console.log(obj)
     if (typeof options === 'function') {
       callback = options;
       options = {};
     }
 
-    if (typeof iri !=='string') {
-      iri = iri['@id'];
-    }
+    // if (typeof iri !=='string') {
+    //   iri = iri['@id'];
+    // }
+    // console.log("iri.post")
+    // console.log(iri)
 
-    var stream  = graphdb.delStream();
-    stream.on('close', callback);
-    stream.on('error', callback);
-
-    (function delAllTriples(iri, done) {
-      graphdb.get({ subject: iri }, function(err, triples) {
-        async.each(triples, function(triple, cb) {
-          stream.write(triple);
-          if (triple.object.indexOf('_:') === 0) {
-            delAllTriples(triple.object, cb);
-          } else {
-            cb();
-          }
-        }, done);
-      });
-    })(iri, function(err) {
+    jsonld.expand(obj, function(err, expanded) {
+      console.log("[graphdb.jsonld.put] expanded");
+      console.log(JSON.stringify(expanded, true, 2));
       if (err) {
-        return callback(err);
+        return callback && callback(err);
       }
-      stream.end();
-    });
+
+      var stream  = graphdb.delStream();
+      stream.on('close', callback);
+      stream.on('error', callback);
+
+      jsonld.toRDF(expanded, options, function(err, triples) {
+        if (err || triples.length === 0) {
+          return callback(err, null);
+        }
+
+        triples['@default'].map(function(triple) {
+
+          return ['subject', 'predicate', 'object'].reduce(function(acc, key) {
+            var node = triple[key];
+            // generate UUID to identify blank nodes
+            // uses type field set to 'blank node' by jsonld.js toRDF()
+            if (node.type === 'blank node') {
+              if (!blanks[node.value]) {
+                blanks[node.value] = '_:' + uuid.v1();
+              }
+              node.value = blanks[node.value];
+            }
+            // preserve object data types using double quotation for literals
+            // and don't keep data type for strings without defined language
+            if(key === 'object' && triple.object.datatype){
+              if(triple.object.datatype.match(XSDTYPE)){
+                if(triple.object.datatype === 'http://www.w3.org/2001/XMLSchema#string'){
+                  node.value = '"' + triple.object.value + '"';
+                } else {
+                  node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
+                }
+              } else if(triple.object.datatype.match(RDFLANGSTRING)){
+                node.value = '"' + triple.object.value + '"@' + triple.object.language;
+              } else {
+                node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
+              }
+            }
+            acc[key] = node.value;
+            return acc;
+          }, {});
+        }).forEach(function(triple) {
+          stream.write(triple);
+        });
+
+        (function delAllTriples(iri, done) {
+          graphdb.get({ subject: iri }, function(err, triples) {
+            async.each(triples, function(triple, cb) {
+              // console.log("levelgraph-jsonld: in delete")
+              // console.log(">>> " + JSON.stringify(triple))
+              stream.write(triple);
+              if (triple.object.indexOf('_:') === 0) {
+                delAllTriples(triple.object, cb);
+              } else {
+                cb();
+              }
+            }, done);
+          });
+        })(iri, function(err) {
+          if (err) {
+            return callback(err);
+          }
+          stream.end();
+        });
+      })
+    })
   };
 
   // http://json-ld.org/spec/latest/json-ld-api/#data-round-tripping
@@ -178,7 +274,8 @@ function levelgraphJSONLD(db, jsonldOpts) {
       callback = memo;
       memo = {};
     }
-
+    console.log("fetchExpandedTriples.iri")
+    console.log(iri)
     graphdb.get({ subject: iri }, function(err, triples) {
       if (err || triples.length === 0) {
         return callback(err, null);
@@ -238,7 +335,10 @@ function levelgraphJSONLD(db, jsonldOpts) {
       if (err || expanded === null) {
         return callback(err, expanded);
       }
-
+      console.log("graphdb.jsonld.get expanded")
+      console.log(expanded)
+      console.log("graphdb.jsonld.get expanded[iri]")
+      console.log(expanded[iri])
       jsonld.compact(expanded[iri], context, options, callback);
     });
   };

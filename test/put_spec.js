@@ -3,7 +3,7 @@ var helper = require('./helper');
 
 describe('jsonld.put', function() {
 
-  var db, manu;
+  var db, manu, library, book;
 
   beforeEach(function() {
     db = helper.getDB();
@@ -177,8 +177,8 @@ describe('jsonld.put', function() {
       "test": { "@value": "foo", "bar": "oh yes" }
     }
     db.jsonld.put(invalid, function(err) {
-      expect(err && err.name).to.equal('jsonld.RdfError');
-      expect(err && err.message).to.equal('Could not expand input before serialization to RDF.');
+      expect(err && err.name).to.equal('jsonld.SyntaxError');
+      expect(err && err.message).to.equal('Invalid JSON-LD syntax; the value of "@vocab" in a @context must be an absolute IRI.');
       done();
     });
   });
@@ -191,7 +191,7 @@ describe('jsonld.put with default base', function() {
   beforeEach(function() {
     db = helper.getDB({ jsonld: { base: 'http://levelgraph.io/ahah/' } });
     manu = helper.getFixture('manu.json');
-  }); 
+  });
 
   afterEach(function(done) {
     db.close(done);
@@ -247,6 +247,33 @@ describe('jsonld.put with default base', function() {
 
     db.jsonld.put(nested, function() {
       db.get({}, function(err, triples) {
+        expect(triples).to.have.length(5);
+        done();
+      });
+    });
+  });
+
+  it('should not overwrite existing facts', function(done) {
+    var chapter = helper.getFixture('chapter.json');
+    var description = helper.getFixture('chapterdescription.json');
+
+    db.jsonld.put(chapter, function() {
+      db.jsonld.put(description, function() {
+        db.get({}, function(err, triples) {
+          console.log(triples)
+          expect(triples).to.have.length(5);
+          done();
+        });
+      });
+    });
+  });
+
+  it('should support graphs', function(done) {
+    var library = helper.getFixture('library.json');
+
+    db.jsonld.put(library, function() {
+      db.get({}, function(err, triples) {
+        console.log(triples);
         expect(triples).to.have.length(5);
         done();
       });

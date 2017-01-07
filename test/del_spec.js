@@ -3,13 +3,15 @@ var helper = require('./helper');
 
 describe('jsonld.del', function() {
 
-  var db, manu, tesla;
+  var db, manu, tesla, library, book;
 
   beforeEach(function() {
     db = helper.getDB({ jsonld: { base: 'http://levelgraph.io/' } });
     manu = helper.getFixture('manu.json');
     tesla = helper.getFixture('tesla.json');
-  }); 
+    library = helper.getFixture('library.json');
+    book = helper.getFixture('book.json');
+  });
 
   afterEach(function(done) {
     db.close(done);
@@ -68,4 +70,17 @@ describe('jsonld.del', function() {
       });
     });
   });
+
+  // it('should del a single object', function(done) {
+  //   db.jsonld.put(library, function() {
+  //     // db.jsonld.del(book, function() {
+  //       db.get({}, function(err, triples) {
+  //         // getting the full db
+  //         console.log(triples)
+  //         expect(triples).to.have.length(2);
+  //         done();
+  //       });
+  //     // });
+  //   });
+  // });
 });
