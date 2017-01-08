@@ -284,7 +284,7 @@ describe('jsonld.put with default base', function() {
     });
   });
 
-  it('should not overwrite existing facts with the preserve option', function(done) {
+  it('should not delete existing facts with the preserve option', function(done) {
     var chapter = helper.getFixture('chapter.json');
     var description = helper.getFixture('chapterdescription.json');
 
@@ -297,6 +297,22 @@ describe('jsonld.put with default base', function() {
       });
     });
   });
+
+
+  it('should not overwrite existing facts with the conflict option', function(done) {
+    var chapter = helper.getFixture('chapter.json');
+    var description = helper.getFixture('chapterdescription.json');
+
+    db.jsonld.put(chapter, function() {
+      db.jsonld.put(description, { preserve: true, conflict: true }, function(err, obj) {
+        console.log(obj);
+        db.get({}, function(err, triples) {
+          expect(triples).to.have.length(3);
+          done();
+        });
+      });
+    });
+    });
 });
 
 describe('jsonld.put with base and preserve option', function() {
