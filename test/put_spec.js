@@ -298,6 +298,26 @@ describe('jsonld.put with default base', function() {
     });
   });
 
+  it('should not overwrite existing facts with the conflict option and return list of conflicts', function(done) {
+    var chapter = helper.getFixture('chapter.json');
+    var description = helper.getFixture('chapterdescription.json');
+
+    db.jsonld.put(chapter, function() {
+      db.jsonld.put(description, { preserve: true, conflicts: true }, function(err, obj, conflicts) {
+        console.log("obj");
+        console.log(obj);
+        console.log("conflicts");
+        console.log(conflicts);
+        db.get({}, function(err, triples) {
+          expect(triples).to.have.length(3);
+          done();
+        });
+      });
+    });
+  });
+
+  it('should insert graphs', function(done) {
+    var library = helper.getFixture('library.json');
 
   it('should not overwrite existing facts with the conflict option', function(done) {
     var chapter = helper.getFixture('chapter.json');
