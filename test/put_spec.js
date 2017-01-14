@@ -634,8 +634,10 @@ describe('jsonld.put with base and preserve option', function() {
     var existing = {"@context": "https://schema.org/", "@id": "http://bigbluehat.com/#", "name": "BigBlueHat"};
     var blank = {"@context": "https://schema.org/", "name": "BigBlueHat"};
 
-    db.jsonld.put(existing, function() {
-      db.jsonld.put(blank, function() {
+    db.jsonld.put(existing, function(err) {
+      console.log(err)
+      db.jsonld.put(blank, function(err) {
+        console.log(err)
         db.get({}, function(err, triples) {
           expect(triples).to.have.length(2);
           done();

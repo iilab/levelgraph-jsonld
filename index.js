@@ -24,10 +24,14 @@ function levelgraphJSONLD(db, jsonldOpts) {
   function doPut(obj, options, callback) {
     var blanks = {};
 
+    console.log("obj")
+    console.log(obj)
     jsonld.expand(obj, function(err, expanded) {
       if (err) {
         return callback && callback(err);
       }
+      console.log("expanded")
+      console.log(expanded)
       if (options.base) {
         if (expanded['@context']) {
           expanded['@context']['@base'] = options.base;
@@ -37,6 +41,8 @@ function levelgraphJSONLD(db, jsonldOpts) {
       }
 
       jsonld.toRDF(expanded, options, function(err, triples) {
+        console.log("triples")
+        console.log(triples)
         if (err || triples.length === 0) {
           return callback(err, null);
         }
@@ -128,10 +134,25 @@ function levelgraphJSONLD(db, jsonldOpts) {
   function doDel(obj, options, callback) {
     var blanks = {};
 
-    jsonld.expand(obj, options, function(err, expanded) {
+    console.log("doDel obj")
+    console.log(JSON.stringify(obj,true,2))
+    console.log("options")
+    console.log(options)
+    // Clone omitting preserve which crashes expand.
+
+    var opt = {}
+    Object.keys(options).forEach(function(key) {
+      ( key !== "preserve" ) && ( opt[key] = options[key] )
+    })
+
+    console.log(opt)
+    jsonld.expand(obj, /*opt,*/ function(err, expanded) {
       if (err) {
-        return callback && callback(err);
+        console.log(err)
+        callback(err);
       }
+      console.log("expanded")
+      console.log(JSON.stringify(expanded,true,2))
 
       var stream  = graphdb.delStream();
       stream.on('close', callback);
@@ -144,10 +165,12 @@ function levelgraphJSONLD(db, jsonldOpts) {
         }
       }
 
-      jsonld.toRDF(expanded, options, function(err, triples) {
+      jsonld.toRDF(expanded, /*opt, */ function(err, triples) {
         if (err || triples.length === 0) {
-          return callback(err, null);
+          callback(err, null);
         }
+        console.log("triples")
+        console.log(JSON.stringify(triples,true,2))
 
         triples['@default'].map(function(triple) {
 
@@ -206,7 +229,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
 
     graphdb.jsonld.del(obj, options, function(err) {
       if (err) {
-        return callback && callback(err);
+        callback(err);
       }
       doPut(obj, options, callback);
     });
@@ -245,7 +268,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
         });
       })(iri, function(err) {
         if (err) {
-          return callback(err);
+           callback(err);
         }
         stream.end();
       });
