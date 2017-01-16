@@ -1112,6 +1112,20 @@ var getFixture = function(name) {
           }
         }
       ]
+    },
+    "null_keys.json": {
+      "@context": { "@vocab": "http://example.org/" },
+      "@id": "http://example.org/graphs/top",
+      "generatedAt": "2012-04-09",
+      "@graph": [
+        {
+          "@id": "http://example.org/graphs/1",
+          "has_graph": {
+            "@id": "http://example.org/graphs/top",
+            "http://example.com/vocab#name": null
+          }
+        }
+      ]
     }
   };
   return fixtures[name];

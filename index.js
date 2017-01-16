@@ -24,16 +24,17 @@ function levelgraphJSONLD(db, jsonldOpts) {
   function doPut(obj, options, callback) {
     var blanks = {};
 
+    if (options.base) {
+      if (obj['@context']) {
+        obj['@context']['@base'] = options.base;
+      } else {
+        obj['@context'] = { '@base' : options.base };
+      }
+    }
+
     jsonld.expand(obj, function(err, expanded) {
       if (err) {
         return callback && callback(err);
-      }
-      if (options.base) {
-        if (expanded['@context']) {
-          expanded['@context']['@base'] = options.base;
-        } else {
-          expanded['@context'] = { '@base' : options.base };
-        }
       }
 
       jsonld.toRDF(expanded, options, function(err, triples) {
@@ -254,7 +255,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
       options = {};
     }
 
-    options.base = options.base || this.options.base;
+    options.base = ( obj["@context"] && obj["@context"]["@base"] ) || options.base || this.options.base;
     options.overwrite = options.overwrite !== undefined ? options.overwrite : ( this.options.overwrite !== undefined ? this.options.overwrite : false );
 
     if (!options.overwrite) {
@@ -351,17 +352,22 @@ function levelgraphJSONLD(db, jsonldOpts) {
     return coerced;
   }
 
-  function fetchExpandedTriples(iri, memo, callback) {
-    if (typeof memo === 'function') {
-      callback = memo;
-      memo = {};
+  function fetchExpandedTriples(iri, frame, callback) {
+    var memo = {};
+    if (typeof frame === 'function') {
+      callback = frame;
+      frame = {};
+    }
+    // console.time("fetchExpandedTriples / " + iri)
+    function followFrame(triple, frame) {
+      return ( frame && frame["@embed"] !== "@never" || frame && frame["@embed"] === undefined )
+            || frame === undefined
     }
 
     graphdb.get({ subject: iri }, function(err, triples) {
       if (err || triples.length === 0) {
         return callback(err, null);
       }
-
       async.reduce(triples, memo, function(acc, triple, cb) {
         var key;
 
@@ -384,9 +390,9 @@ function levelgraphJSONLD(db, jsonldOpts) {
           } else if (N3Util.isLiteral(triple.object)) {
             object = getCoercedObject(triple.object);
           }
-          if(object['@id']) {
+          if(object['@id'] && followFrame(triple, frame) ) {
             // expanding object iri
-            fetchExpandedTriples(triple.object, function(err, expanded) {
+            fetchExpandedTriples(triple.object, frame && frame[triple.predicate], function(err, expanded) {
               if (!acc[triple.subject][triple.predicate]) acc[triple.subject][triple.predicate] = [];
               if (expanded !== null) {
                 acc[triple.subject][triple.predicate].push(expanded[triple.object]);
@@ -395,17 +401,16 @@ function levelgraphJSONLD(db, jsonldOpts) {
               }
               return cb(err, acc);
             });
-          }
-          else if (Array.isArray(acc[triple.subject][triple.predicate])){
+          } else if (Array.isArray(acc[triple.subject][triple.predicate])){
             acc[triple.subject][triple.predicate].push(object);
             return cb(err, acc);
           } else {
             acc[triple.subject][triple.predicate] = [object];
             return cb(err, acc);
           }
-        } else {
+        } else if (followFrame(triple, frame)) {
           // deal with blanks
-          fetchExpandedTriples(triple.object, function(err, expanded) {
+          fetchExpandedTriples(triple.object, frame && frame[triple.predicate], function(err, expanded) {
             if (!acc[triple.subject][triple.predicate]) acc[triple.subject][triple.predicate] = [];
             if (expanded !== null) {
               acc[triple.subject][triple.predicate].push(expanded[triple.object]);
@@ -416,37 +421,56 @@ function levelgraphJSONLD(db, jsonldOpts) {
           });
         }
       }, callback);
+      // console.timeEnd("fetchExpandedTriples / " + iri)
     });
   }
 
   graphdb.jsonld.get = function(frame, context, options, callback) {
     var iri;
 
-    if (typeof frame === 'string') {
-      iri = frame
-      frame = {};
-      frame["@id"] = iri;
-    } else {
-      iri = frame["@id"]
-    }
-
     if (typeof options === 'function') {
       callback = options;
       options = {};
     } else if (typeof context === 'function') {
       callback = context;
+      context = {};
       context = frame["@context"] || {};
+      options = {};
     }
 
-    fetchExpandedTriples(iri, function(err, expanded) {
-      if (err || expanded === null) {
-        return callback(err, expanded);
+    options.base = ( frame["@context"] && frame["@context"]["@base"] ) || ( context && context["@base"] ) || options.base || this.options.base;
+
+    if (typeof frame === 'string') {
+      iri = frame
+      frame = {};
+      frame["@id"] = options.base + iri;
+    } else {
+      iri = options.base + frame["@id"]
+    }
+
+    jsonld.compact(frame, {}, function(err, compact_frame) {
+      if (err || compact_frame === null) {
+        return callback(err, compact_frame);
       }
-      jsonld.frame(expanded[iri], frame, function(err, framed) {
+      console.log("compact_frame")
+      console.log(JSON.stringify(compact_frame,true,2))
+
+      fetchExpandedTriples(iri, compact_frame, function(err, expanded) {
         if (err || expanded === null) {
-          return callback(err, framed);
+          return callback(err, expanded);
         }
-        jsonld.compact(framed, context, options, callback);
+        // console.log("expanded")
+        // console.log(JSON.stringify(expanded,true,2))
+        // console.log("frame")
+        // console.log(JSON.stringify(frame,true,2))
+        jsonld.frame(expanded, frame, function(err, framed) {
+          if (err || expanded === null) {
+            return callback(err, framed);
+          }
+          // console.log("framed")
+          // console.log(JSON.stringify(framed,true,2))
+          jsonld.compact(framed, context, options, callback);
+        });
       });
     });
   };
