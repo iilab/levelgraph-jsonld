@@ -978,4 +978,15 @@ describe('jsonld.put with overwrite and cut set to true (backward compatibility)
     });
   });
 
+  it('should insert documents with null keys', function(done) {
+    var null_keys = helper.getFixture('null_keys.json');
+
+    db.jsonld.put(null_keys, function() {
+      db.get({}, function(err, triples) {
+        expect(triples).to.have.length(2);
+        done();
+      });
+    });
+  });
+
 });
