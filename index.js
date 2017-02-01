@@ -719,7 +719,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
       try {
         obj = JSON.parse(obj);
       } catch (e) {
-        if (N3Util.isIRI(obj) && !options.cut) {
+        if (typeof obj !== 'string' || ( N3Util.isIRI(obj) && !options.cut )) {
           callback(new Error("Passing an IRI to del is not supported anymore. Please pass a JSON-LD document."))
         }
       }
