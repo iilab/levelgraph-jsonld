@@ -1,5 +1,6 @@
 var expect = require('chai').expect;
 var helper = require('./helper');
+var async = require('async');
 
 describe('jsonld.put', function() {
 
@@ -191,7 +192,7 @@ describe('jsonld.put with default base', function() {
   beforeEach(function() {
     db = helper.getDB({ jsonld: { base: 'http://levelgraph.io/ahah/' } });
     manu = helper.getFixture('manu.json');
-  }); 
+  });
 
   afterEach(function(done) {
     db.close(done);
@@ -252,4 +253,54 @@ describe('jsonld.put with default base', function() {
       });
     });
   });
+
+
+  it('should put atomically when ran in parallel', function(done) {
+    var length = 50
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `${k+1}`
+    }})
+
+    console.time('check atomically')
+
+    async.each(deep, function(triple,cb) {
+      console.time('put' + triple["@id"])
+      db.jsonld.put(Object.assign(triple,{
+          "@context": {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          }
+        }), function (err, obj) {
+          if (err) console.log("Err", err)
+          console.timeEnd('put' + triple["@id"])
+          // console.log(triple)
+          console.time('get' + triple["@id"])
+          console.log("get()", "https://levelgraph.io/get/" + triple["@id"])
+          db.jsonld.get("https://levelgraph.io/get/" + triple["@id"], {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          }, { base: "https://levelgraph.io/get/"}, function(err, obj) {
+            console.timeEnd('get' + triple["@id"])
+            if (err) console.log(err)
+            // console.log("obj", JSON.stringify(obj,true,2));
+            // expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
+            cb();
+          })
+      })
+    }, function() {
+      console.timeEnd('check atomically')
+      done();
+    })
+  });
+
 });
