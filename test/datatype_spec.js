@@ -100,12 +100,10 @@ describe('jsonld.put data type', function() {
     it('does not preserve string', function(done) {
       bbb.contentRating = 'MPAA PG-13';
       db.jsonld.put(bbb, function() {
-        console.log("bbb", bbb)
         db.get({
           predicate: 'http://schema.org/contentRating'
         }, function(err, triples) {
           db.get({}, function(err, triples) {
-            console.log("triples", triples)
             expect(triples[1].object).to.equal('"MPAA PG-13"');
             done();
           });
@@ -298,14 +296,10 @@ describe('jsonld.get data type', function() {
     it('does not preserve string', function(done) {
       triple.predicate = 'http://schema.org/contentRating';
       triple.object = '"MPAA PG-13"^^http://www.w3.org/2001/XMLSchema#string';
-      console.log("bbb", bbb)
       db.jsonld.put(bbb, function() {
-        console.log("triple",triple)
         db.put(triple, function() {
           db.get({}, function(err, triples) {
-            console.log("triples", triples)
             db.jsonld.get(bbb['@id'], bbb['@context'], function(err, doc) {
-              console.log("doc", doc)
               expect(doc['contentRating']).to.equal('MPAA PG-13');
               done();
             });

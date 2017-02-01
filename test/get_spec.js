@@ -66,10 +66,10 @@ describe('jsonld.get', function() {
   it('should support nested objects', function(done) {
     var nested = helper.getFixture('nested.json');
     db.jsonld.put(nested, function(err, obj) {
-      console.log(obj)
+      // console.log(obj)
       db.jsonld.get({ '@id': obj["@id"], '@context': obj['@context'] }, function(err, result) {
-        console.log("result", result)
-        db.get({}, console.log)
+        // console.log("result", result)
+        // db.get({}, console.log)
         delete result['knows'][0]['@id'];
         delete result['knows'][1]['@id'];
         expect(result).to.eql(nested);
@@ -154,7 +154,7 @@ describe('with frames', function() {
   });
 
   it('should respect @embed rapidly', function(done) {
-    console.time('createdeep')
+    // console.time('createdeep')
     // 10000 doesn't pass.
     var length = 5000
 
@@ -164,8 +164,8 @@ describe('with frames', function() {
       "link": `${k+1}`
     }})
 
-    console.timeEnd('createdeep')
-    console.time('put')
+    // console.timeEnd('createdeep')
+    // console.time('put')
 
     db.jsonld.put({
         "@context": {
@@ -178,10 +178,10 @@ describe('with frames', function() {
         },
         "@graph": deep
       }, function (err, obj) {
-        console.timeEnd('put')
+        // console.timeEnd('put')
       // console.log("obj")
       // console.log(JSON.stringify(obj,true,2))
-      console.time('get')
+      // console.time('get')
       db.jsonld.get({
         "@context": {
           "link": {
@@ -198,9 +198,9 @@ describe('with frames', function() {
           "@embed": "@never"
         }
       }, function(err, obj) {
-        console.timeEnd('get')
-        console.log("get result");
-        console.log(JSON.stringify(obj,true,2));
+        // console.timeEnd('get')
+        // console.log("get result");
+        // console.log(JSON.stringify(obj,true,2));
         expect(obj["link"]).to.eql("1");
         expect(obj["value"]).to.eql("0");
         done();
