@@ -256,7 +256,7 @@ describe('jsonld.put with default base', function() {
 
 
   it('should put atomically when ran in parallel', function(done) {
-    var length = 50
+    var length = 5
     var deep = Array.from({ length: length }, function (v,k) { return {
       "@id": `${k}`,
       "value": `${k}`,

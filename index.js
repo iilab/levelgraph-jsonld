@@ -178,6 +178,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
       callback = memo;
       memo = {};
     }
+    console.time("fetchExpandedTriples / " + iri)
 
     graphdb.get({ subject: iri }, function(err, triples) {
       if (err || triples.length === 0) {
@@ -224,6 +225,8 @@ function levelgraphJSONLD(db, jsonldOpts) {
           });
         }
       }, callback);
+      console.timeEnd("fetchExpandedTriples / " + iri)
+
     });
   }
 
