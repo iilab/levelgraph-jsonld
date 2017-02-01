@@ -785,14 +785,19 @@ function levelgraphJSONLD(db, jsonldOpts) {
     }
     return coerced;
   }
+  var depth;
 
   function fetchExpandedTriples(iri, frame, callback) {
+    depth++;
     var memo = {};
     if (typeof frame === 'function') {
       callback = frame;
       frame = {};
     }
-    console.time("fetchExpandedTriples / " + iri)
+    debugger;
+    var dpth = Array(depth).join(">");
+    console.log(dpth + "fetchExpandedTriples.iri", iri)
+    // console.time(dpth + "fetchExpandedTriples / " + iri)
     function followFrame(triple, frame) {
       return ( frame && frame["@embed"] !== "@never" || frame && frame["@embed"] === undefined )
             || frame === undefined
@@ -803,6 +808,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
       }
       // console.log("get.triples", triples)
       async.reduce(triples, memo, function(acc, triple, cb) {
+        // console.log("reduce.acc", acc)
         var key;
 
         if (!acc[triple.subject] && !N3Util.isBlank(triple.subject)) {
@@ -854,8 +860,13 @@ function levelgraphJSONLD(db, jsonldOpts) {
             return cb(err, acc);
           });
         }
-      }, callback);
-      console.timeEnd("fetchExpandedTriples / " + iri)
+      }, function(err, result) {
+        console.log(dpth + "callback.iri", iri)
+         return callback(err, result);
+        // return process.nextTick(callback);
+      });
+      // console.timeEnd(dpth + "fetchExpandedTriples / " + iri)
+      // console.trace();
     });
   }
 
@@ -897,12 +908,13 @@ function levelgraphJSONLD(db, jsonldOpts) {
       } else {
         iri = N3Util.isIRI(compacted["@id"]) ? compacted["@id"] : options.base + compacted["@id"]
       }
-      // console.log("iri", iri)
+      console.log("get.iri", iri)
       // console.log("frame", frame)
       // console.log("context", context)
 
-
+      depth = 0;
       fetchExpandedTriples(iri, compacted, function(err, expanded) {
+        depth = 0;
         if (err || expanded === null) {
           return callback(err, expanded);
         }
