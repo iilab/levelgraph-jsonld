@@ -792,7 +792,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
       callback = frame;
       frame = {};
     }
-    // console.time("fetchExpandedTriples / " + iri)
+    console.time("fetchExpandedTriples / " + iri)
     function followFrame(triple, frame) {
       return ( frame && frame["@embed"] !== "@never" || frame && frame["@embed"] === undefined )
             || frame === undefined
@@ -855,7 +855,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
           });
         }
       }, callback);
-      // console.timeEnd("fetchExpandedTriples / " + iri)
+      console.timeEnd("fetchExpandedTriples / " + iri)
     });
   }
 
