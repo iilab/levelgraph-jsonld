@@ -276,7 +276,7 @@ describe('jsonld.put with default base', function() {
             "@base": "https://levelgraph.io/get/",
             "@vocab": "http://example.org/vocab#"
           }
-        }), function (err, obj) {
+        }), /*{sync:true},*/ function (err, obj) {
           if (err) console.log("Err", err)
           console.timeEnd('put' + triple["@id"])
           // console.log(triple)
@@ -292,12 +292,17 @@ describe('jsonld.put with default base', function() {
           }, { base: "https://levelgraph.io/get/"}, function(err, obj) {
             console.timeEnd('get' + triple["@id"])
             if (err) console.log(err)
+            db.get({}, function(err, triples) {
+              console.log(triples.length);
+              cb();
+            });
             // console.log("obj", JSON.stringify(obj,true,2));
             // expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
-            cb();
+            // cb();
           })
       })
-    }, function() {
+    }, function(err) {
+      if (err) console.log(err)
       console.timeEnd('check atomically')
       done();
     })
