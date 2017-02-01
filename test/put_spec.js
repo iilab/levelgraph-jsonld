@@ -1,5 +1,7 @@
 var expect = require('chai').expect;
 var helper = require('./helper');
+var async = require('async');
+var atomic = require('level-atomic');
 
 describe('jsonld.put', function() {
 
@@ -993,4 +995,317 @@ describe('jsonld.put with overwrite and cut set to true (backward compatibility)
     });
   });
 
+  it('should put rapidly', function(done) {
+    console.time('createdeep')
+    // 10000 doesn't pass.
+    var length = 5000
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `${k+1}`
+    }})
+
+    console.timeEnd('createdeep')
+    console.time('put')
+
+    db.jsonld.put({
+        "@context": {
+          "link": {
+            "@id": "http://example.org/link#",
+            "@type": "@id"
+          },
+          "@base": "https://levelgraph.io/get/",
+          "@vocab": "http://example.org/vocab#"
+        },
+        "@graph": deep
+      }, function (err, obj) {
+        console.timeEnd('put')
+        // console.log(JSON.stringify(obj,true,2));
+        expect(obj["@graph"][length - 1]["link"]).to.eql(length.toString() );
+        expect(obj["@graph"][length - 1]["value"]).to.eql((length - 1).toString());
+        done();
+    });
+  });
+
+  it('should put atomically', function(done) {
+    var length = 100
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `${k+1}`
+    }})
+
+    console.time('put atomically')
+
+    async.eachSeries(deep, function(triple,cb) {
+      console.time('put' + triple["@id"])
+      db.jsonld.put({
+          "@context": {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          },
+          "@graph": triple
+        }, {sync:true},function (err, obj) {
+          if (err) console.log(err)
+          console.timeEnd('put' + triple["@id"])
+          // console.log(triple)
+          console.time('get' + triple["@id"])
+          db.jsonld.get("https://levelgraph.io/get/" + triple["@id"], function(err, obj) {
+            console.timeEnd('get' + triple["@id"])
+            if (err) console.log(err)
+            // console.log(JSON.stringify(obj,true,2));
+            expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
+            cb();
+          })
+      });
+    }, function() {
+      console.timeEnd('put atomically')
+      done();
+    })
+  });
+
+  it('should check and put atomically when ran in series', function(done) {
+    var length = 50
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `${k+1}`
+    }})
+
+    const validate = function({ subject, object, predicate, graph }) {
+      // Ignore @type
+      if ( predicate == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" ) return true;
+      // Property unicity: Conflict if subject predicate is the same as an existing triple.
+      return { subject, predicate };
+    }
+
+    var previous_triple = {}
+
+    async.eachSeries(deep, function(triple,cb) {
+      db.jsonld.check({
+          "@context": {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          },
+          "@graph": previous_triple
+        }, validate, function(err, conflicts, checked) {
+        db.jsonld.put({
+            "@context": {
+              "link": {
+                "@id": "http://example.org/link#",
+                "@type": "@id"
+              },
+              "@base": "https://levelgraph.io/get/",
+              "@vocab": "http://example.org/vocab#"
+            },
+            "@graph": triple
+          }, {sync:true}, function (err, obj) {
+            if (err) console.log("Err", err)
+            db.jsonld.get("https://levelgraph.io/get/" + triple["@id"], function(err, obj) {
+              if (err) console.log(err)
+              if (Object.keys(previous_triple).length !== 0) {
+                expect(conflicts).to.have.length(2);
+                expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
+              }
+              previous_triple = triple;
+              cb();
+            })
+        });
+      })
+
+    }, function() {
+      console.timeEnd('check atomically')
+      done();
+    })
+  });
+
+  it('does not check and put atomically when ran in parallel', function(done) {
+    var length = 50
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `${k+1}`
+    }})
+
+    const validate = function({ subject, object, predicate, graph }) {
+      // Ignore @type
+      if ( predicate == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" ) return true;
+      // Property unicity: Conflict if subject predicate is the same as an existing triple.
+      return { subject, predicate };
+    }
+
+    var previous_triple = {}
+
+    async.each(deep, function(triple,cb) {
+      db.jsonld.check({
+          "@context": {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          },
+          "@graph": previous_triple
+        }, validate, function(err, conflicts, checked) {
+        db.jsonld.put({
+            "@context": {
+              "link": {
+                "@id": "http://example.org/link#",
+                "@type": "@id"
+              },
+              "@base": "https://levelgraph.io/get/",
+              "@vocab": "http://example.org/vocab#"
+            },
+            "@graph": triple
+          }, {sync:true}, function (err, obj) {
+            if (err) console.log("Err", err)
+            db.jsonld.get("https://levelgraph.io/get/" + triple["@id"], function(err, obj) {
+              if (err) console.log(err)
+              if (Object.keys(previous_triple).length !== 0) {
+                expect(conflicts).to.have.length(0);
+                expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
+              }
+              previous_triple = triple;
+              cb();
+            })
+        });
+      })
+
+    }, function() {
+      done();
+    })
+  });
+
+
+  it('should put atomically when ran in parallel', function(done) {
+    var length = 50
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `${k+1}`
+    }})
+
+    console.time('check atomically')
+
+    async.each(deep, function(triple,cb) {
+      console.time('put' + triple["@id"])
+      db.jsonld.put({
+          "@context": {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          },
+          "@graph": triple
+        }, {sync:true},
+        function (err, obj) {
+          if (err) console.log("Err", err)
+          console.timeEnd('put' + triple["@id"])
+          // console.log(triple)
+          console.time('get' + triple["@id"])
+          console.log("get()", "https://levelgraph.io/get/" + triple["@id"])
+          db.jsonld.get("https://levelgraph.io/get/" + triple["@id"], function(err, obj) {
+            console.timeEnd('get' + triple["@id"])
+            if (err) console.log(err)
+            // console.log("obj", JSON.stringify(obj,true,2));
+            expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
+            cb();
+          })
+      })
+
+    }, function() {
+      console.timeEnd('check atomically')
+      done();
+    })
+  });
+
+  it('should check and put atomically when ran in parallel with a lock', function(done) {
+    var _db = atomic(db);
+
+    var length = 50
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `${k+1}`
+    }})
+
+    console.time('check atomically')
+
+    const validate = function({ subject, object, predicate, graph }) {
+      // Ignore @type, /events /metrics/points
+      if ( predicate == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+        || predicate.match("https://openintegrity.org/events/")
+        || predicate == ("https://openintegrity.org/metrics/points/") ) return true;
+      // console.log("checking triple: " + JSON.stringify({ subject, object, predicate, graph },true,2))
+      // console.log("checking triple: ", predicate)
+
+      // Property unicity: Conflict if subject predicate is the same as an existing triple.
+      return { subject, predicate };
+    }
+
+    var previous_triple = {}
+
+    async.each(deep, function(triple,cb) {
+      // _db.lock()
+      db.jsonld.check({
+          "@context": {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          },
+          "@graph": previous_triple
+        }, validate, function(err, conflicts, checked) {
+          console.log("conflicts", conflicts);
+          // console.log("checked", checked);
+        console.time('put' + triple["@id"])
+        db.jsonld.put({
+            "@context": {
+              "link": {
+                "@id": "http://example.org/link#",
+                "@type": "@id"
+              },
+              "@base": "https://levelgraph.io/get/",
+              "@vocab": "http://example.org/vocab#"
+            },
+            "@graph": triple
+          }, {sync:true}, function (err, obj) {
+            if (err) console.log("Err", err)
+            console.timeEnd('put' + triple["@id"])
+            // console.log(triple)
+            console.time('get' + triple["@id"])
+            console.log("get()", "https://levelgraph.io/get/" + triple["@id"])
+            db.jsonld.get("https://levelgraph.io/get/" + triple["@id"], function(err, obj) {
+              console.timeEnd('get' + triple["@id"])
+              if (err) console.log(err)
+              // console.log("obj", JSON.stringify(obj,true,2));
+              // console.log(previous_triple)
+              if (Object.keys(previous_triple).length !== 0) {
+                expect(conflicts).to.have.length(2);
+                expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
+              }
+              previous_triple = triple;
+              cb();
+            })
+        });
+      })
+
+    }, function() {
+      console.timeEnd('check atomically')
+      done();
+    })
+  });
 });

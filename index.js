@@ -21,6 +21,16 @@ function levelgraphJSONLD(db, jsonldOpts) {
       options: jsonldOpts
   };
 
+  // Post might follow HTTP POST semantics as doPut used to by returning "missing" ids for blank nodes
+  // (i.e. interpreting blank nodes as nested Posts).
+
+  // Put might then focus on existing resources and return information about conflicts when they occur
+
+  // Patch would then follow LD Patch, while we might have an Update to deal with graphs (and follow SPARQL Update)
+  // Path might be its own level-jsonld-patch module.
+
+  //
+
   function doPut(obj, options, callback) {
     var blanks = {};
 
@@ -31,20 +41,29 @@ function levelgraphJSONLD(db, jsonldOpts) {
         obj['@context'] = { '@base' : options.base };
       }
     }
+    // console.time('doPut expand')
 
     jsonld.expand(obj, function(err, expanded) {
+      // console.timeEnd('doPut expand')
       if (err) {
         return callback && callback(err);
       }
+      // console.log("expanded", expanded)
+      // console.time('doPut toRDF')
 
       jsonld.toRDF(expanded, options, function(err, triples) {
+        // console.timeEnd('doPut toRDF')
 
         if (err || triples.length === 0) {
-          return callback(err, null);
+          return callback && callback(err, null);
         }
 
         var stream = graphdb.putStream();
-
+        // console.time('doPut stream')
+        // console.time('doPut stream opening')
+        var opening = true;
+        // stream.on('data', function() { opening && console.timeEnd('doPut stream opening'); opening = false; });
+        // stream.on('finish', function() { console.timeEnd('doPut stream finishing'); });
         stream.on('error', callback);
         stream.on('close', function() {
           if (options.blank_ids) {
@@ -88,12 +107,271 @@ function levelgraphJSONLD(db, jsonldOpts) {
             } else {
               return callback(null, obj);
             }
+        });
+
+        console.time('doPut graph')
+
+        async.eachSeries(Object.keys(triples), function(graph_key, cb) {
+          var graph_name;
+
+          var store_keys;
+          if (graph_key === '@default') {
+            // empty graph is @default for now.
+            store_keys = ['subject', 'predicate', 'object'];
           } else {
-            return callback(null, obj);
+            store_keys = ['subject', 'predicate', 'object', 'graph'];
+          }
+
+          // console.time('doPut list')
+
+          var list = triples[graph_key].map(function(triple) {
+            // console.log(triple)
+            // console.time('doPut' + triple.subject.value)
+
+            var ret = store_keys.reduce(function(acc, key) {
+              if(key === 'graph') {
+                acc[key] = graph_key;
+              } else {
+                var node = triple[key];
+                // generate UUID to identify blank nodes
+                // uses type field set to 'blank node' by jsonld.js toRDF()
+                if (node.type === 'blank node') {
+                  if (!blanks[node.value]) {
+                    blanks[node.value] = '_:' + uuid.v1();
+                  }
+                  node.value = blanks[node.value];
+                }
+                // preserve object data types using double quotation for literals
+                // and don't keep data type for strings without defined language
+                if(key === 'object' && triple.object.datatype){
+                  if(triple.object.datatype.indexOf(XSDTYPE) != -1){
+                    if(triple.object.datatype === 'http://www.w3.org/2001/XMLSchema#string'){
+                      node.value = '"' + triple.object.value + '"';
+                    } else {
+                      node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
+                    }
+                  } else if(triple.object.datatype.indexOf(RDFLANGSTRING) != -1){
+                    node.value = '"' + triple.object.value + '"@' + triple.object.language;
+                  } else {
+                    node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
+                  }
+                }
+                acc[key] = node.value;
+              }
+              return acc;
+            }, {});
+            // console.timeEnd('doPut' + triple.subject.value)
+
+            return ret;
+          })
+
+          // console.timeEnd('doPut list')
+          // console.log("list", JSON.stringify(list,true,2))
+          async.eachSeries(list, function(triple, cb) {
+            stream.write(triple, cb);
+            // console.timeEnd('doPut' + triple.subject)
+            // (function write(triple, done) {
+            //    var ret = stream.write(triple);
+            //    if (ret) {
+            //      cb();
+            //    } else {
+            //      stream.once('drain', write(triple,cb));
+            //    }
+            // })(triple);
+          }, cb);
+        }, function(err) {
+          // console.timeEnd('doPut graph')
+          // console.time('doPut stream closing')
+          // console.time('doPut stream finishing')
+          stream.end();
+        });
+      });
+    });
+  }
+
+
+  function doPutSync(obj, options, callback) {
+    var blanks = {};
+
+    if (options.base) {
+      if (obj['@context']) {
+        obj['@context']['@base'] = options.base;
+      } else {
+        obj['@context'] = { '@base' : options.base };
+      }
+    }
+    // console.time('doPut expand')
+
+    jsonld.expand(obj, function(err, expanded) {
+      // console.timeEnd('doPut expand')
+      if (err) {
+        return callback && callback(err);
+      }
+
+      // console.time('doPut toRDF')
+
+      jsonld.toRDF(expanded, options, function(err, triples) {
+        // console.timeEnd('doPut toRDF')
+
+        if (err || triples.length === 0) {
+          return callback && callback(err, null);
+        }
+
+        var lists = Object.keys(triples).reduce(function(acc, graph_key) {
+          var graph_name;
+
+          var store_keys;
+          if (graph_key === '@default') {
+            // empty graph is @default for now.
+            store_keys = ['subject', 'predicate', 'object'];
+          } else {
+            store_keys = ['subject', 'predicate', 'object', 'graph'];
+          }
+
+          // console.time('doPut list')
+
+          var list = triples[graph_key].map(function(triple) {
+            // console.log(triple)
+            // console.time('doPut' + triple.subject.value)
+
+            var ret = store_keys.reduce(function(acc, key) {
+              if(key === 'graph') {
+                acc[key] = graph_key;
+              } else {
+                var node = triple[key];
+                // generate UUID to identify blank nodes
+                // uses type field set to 'blank node' by jsonld.js toRDF()
+                if (node.type === 'blank node') {
+                  if (!blanks[node.value]) {
+                    blanks[node.value] = '_:' + uuid.v1();
+                  }
+                  node.value = blanks[node.value];
+                }
+                // preserve object data types using double quotation for literals
+                // and don't keep data type for strings without defined language
+                if(key === 'object' && triple.object.datatype){
+                  if(triple.object.datatype.indexOf(XSDTYPE) != -1){
+                    if(triple.object.datatype === 'http://www.w3.org/2001/XMLSchema#string'){
+                      node.value = '"' + triple.object.value + '"';
+                    } else {
+                      node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
+                    }
+                  } else if(triple.object.datatype.indexOf(RDFLANGSTRING) != -1){
+                    node.value = '"' + triple.object.value + '"@' + triple.object.language;
+                  } else {
+                    node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
+                  }
+                }
+                acc[key] = node.value;
+              }
+              return acc;
+            }, {});
+            // console.timeEnd('doPut' + triple.subject.value)
+
+            return ret;
+          })
+
+          // console.timeEnd('doPut list')
+          return acc.concat(list)
+        }, []);
+
+
+        graphdb.put(lists, /*{sync: true},*/ function(err, ret) {
+          // console.log("sync")
+          if (err) {
+            callback(err, null);
+          }
+          var blank_keys = Object.keys(blanks);
+          var clone_obj = Object.assign({}, obj)
+          var frame;
+          frame = (function framify(o) {
+            Object.keys(o).map(function(key) {
+              if (Array.isArray(o[key]) && key != "@type") {
+                o[key] = o[key][0];
+              } else if (o[key] && typeof o[key] === "object") {
+                o[key] = framify(o[key]);
+              }
+            })
+            return o;
+          })(clone_obj)
+
+          if (blank_keys.length != 0) {
+            jsonld.frame(obj, frame, function(err, framed) {
+              if (err) {
+                callback(err, null);
+              }
+              var framed_string = JSON.stringify(framed);
+
+              blank_keys.forEach(function(blank) {
+                framed_string = framed_string.replace(blank,blanks[blank])
+              })
+              var ided = JSON.parse(framed_string);
+              // console.timeEnd('doPut close')
+              if (ided["@graph"].length == 1) {
+                var clean_reframe = Object.assign({}, { "@context": ided["@context"]}, ided["@graph"][0]);
+                callback(null, clean_reframe);
+              } else if (ided["@graph"].length > 1) {
+                callback(null, ided);
+              } else {
+                // Could not reframe the input, returning the original object
+                callback(null, obj);
+              }
+            })
+>>>>>>> Working on locking
+          } else {
+            // console.timeEnd('doPut close')
+            // console.log("callback", obj["@graph"]["@id"])
+            callback(null, obj);
           }
         });
 
-        Object.keys(triples).forEach(function(graph_key) {
+
+      });
+    });
+  }
+
+  // Put needs to check if existing triples match the submitted triple before inserting them.
+  // Matching needs to be defined, for instance:
+  //   - Unicity of a property: s p o / s p o'
+  //   - Negation of an existing Asserted triple. s p o a / s p o n
+  //   -
+  // passing a `check` callback function could be a good way to do this.
+
+
+  // The below approach runs into an atomicity problem as the stream writes but
+  // the db.get doesn't catch up fast enough. So either:
+  //   - I find a way to flush the stream and ensure atomicity after the stream ends.
+  //   - I look into using level-hooks to implement the check.
+
+  function doCheck(obj, options, checkfn, callback) {
+    var blanks = {};
+    var conflicts = [];
+
+    if (options.base) {
+      if (obj['@context']) {
+        obj['@context']['@base'] = options.base;
+      } else {
+        obj['@context'] = { '@base' : options.base };
+      }
+    }
+    jsonld.expand(obj, function(err, expanded) {
+      if (err) {
+        return callback && callback(err);
+      }
+
+      // console.log("expanded", JSON.stringify(expanded,true,2))
+
+      jsonld.toRDF(expanded, options, function(err, triples) {
+
+        // console.log("triples", JSON.stringify(triples,true,2))
+
+        if (err || triples.length === 0) {
+          return callback(err, null, fails);
+        }
+
+        var ret = {};
+
+        async.each(Object.keys(triples), function(graph_key, cbGraph) {
           var graph_name;
 
           var store_keys;
@@ -104,7 +382,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
             store_keys = ['subject', 'predicate', 'object', 'graph'];
           }
 
-          triples[graph_key].map(function(triple) {
+          async.reduce(triples[graph_key].map(function(triple) {
 
             return store_keys.reduce(function(acc, key) {
               if(key === 'graph') {
@@ -124,7 +402,8 @@ function levelgraphJSONLD(db, jsonldOpts) {
                 if(key === 'object' && triple.object.datatype){
                   if(triple.object.datatype.match(XSDTYPE)){
                     if(triple.object.datatype === 'http://www.w3.org/2001/XMLSchema#string'){
-                      node.value = '"' + triple.object.value + '"';
+                      // return strings as simple JSON values to match input
+                      node.value = triple.object.value;
                     } else {
                       node.value = '"' + triple.object.value + '"^^' + triple.object.datatype;
                     }
@@ -138,11 +417,68 @@ function levelgraphJSONLD(db, jsonldOpts) {
               }
               return acc;
             }, {});
-          }).forEach(function(triple) {
-            stream.write(triple);
+          }), {}, function(ret, triple, cb) {
+            // console.log("triple", triple)
+            var checked = checkfn(triple);
+            if (checked === true) {
+              ret[triple.subject] = ret[triple.subject] ? ret[triple.subject] : { '@id': triple.subject };
+              if (Array.isArray(ret[triple.subject][triple.predicate])) {
+                ret[triple.subject][triple.predicate].push(triple.object);
+              } else {
+                ret[triple.subject][triple.predicate] = [triple.object];
+              }
+              cb(null, ret);
+            } else if (typeof checked === 'object') {
+              ret[triple.subject] = ret[triple.subject] ? ret[triple.subject] : { '@id': triple.subject };
+              graphdb.get(checked, function(err, results) {
+                // console.log("err", err)
+                if (err) cb(err)
+                // console.log("dynamic check : ", checked)
+                // console.log("validated triple: " + JSON.stringify(triple,true,2))
+                // console.log("results : ", results)
+                if (results.length == 0) {
+                  if (Array.isArray(ret[triple.subject][triple.predicate])) {
+                    ret[triple.subject][triple.predicate].push(triple.object);
+                  } else {
+                    ret[triple.subject][triple.predicate] = [triple.object];
+                  }
+                  // console.log("ret", ret)
+                  cb(null, ret);
+                } else {
+                  // console.log("conflict", triple)
+                  conflicts.push(triple);
+                  cb(null, ret);
+                }
+              });
+            } else {
+              // console.log("fails doPut check: " + result)
+              // console.log("failed triple: " + JSON.stringify(triple,true,2))
+              // console.log("conflict", triple)
+              conflicts.push(triple);
+              cb(null, ret);
+            }
+          }, function(err, result) {
+            if (err) cbGraph(err)
+            // console.log("result", result)
+            ret[graph_key] = result
+            cbGraph()
           });
+        }, function(err) {
+          if (err) callback(err,null)
+          // TODO: Fix the problem with framing graphs. Named graph key values aren't returned at the root
+          // as they are not processed correctly by the JSON-LD framing algorithm
+          // console.log("ret", ret)
+          var checked = Object.keys(ret).reduce(function(obj, graph) {
+            if (graph == "@default") {
+              return Object.assign(obj, { "content": { "@graph": Object.keys(ret[graph]).map(function(i) { return ret[graph][i] }) }})
+            } else if (ret[graph][Object.keys(ret[graph])[0]]) {
+              return Object.assign(obj, { "graph": ret[graph][Object.keys(ret[graph])[0]] } )
+            }
+          }, {})
+          // console.log("checked['content']", checked["content"])
+          // console.log("checked['graph']", checked["graph"])
+          callback(null, conflicts, checked["content"], checked["graph"])
         });
-        stream.end();
       });
     });
   }
@@ -257,9 +593,12 @@ function levelgraphJSONLD(db, jsonldOpts) {
 
     options.base = ( obj["@context"] && obj["@context"]["@base"] ) || options.base || this.options.base;
     options.overwrite = options.overwrite !== undefined ? options.overwrite : ( this.options.overwrite !== undefined ? this.options.overwrite : false );
-
     if (!options.overwrite) {
-      doPut(obj, options, callback);
+      if (options.sync) {
+        doPutSync(obj, options, callback);
+      } else {
+        doPut(obj, options, callback);
+      }
     } else {
       graphdb.jsonld.del(obj, options, function(err) {
         if (err) {
@@ -268,6 +607,102 @@ function levelgraphJSONLD(db, jsonldOpts) {
       });
       doPut(obj, options, callback);
     }
+  };
+
+  graphdb.jsonld.post = function(obj, options, callback) {
+
+    if (typeof obj === 'string') {
+      obj = JSON.parse(obj);
+    }
+
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+
+    options.base = ( obj["@context"] && obj["@context"]["@base"] ) || options.base || this.options.base;
+    options.overwrite = options.overwrite !== undefined ? options.overwrite : ( this.options.overwrite !== undefined ? this.options.overwrite : false );
+
+    if (!options.overwrite) {
+      doPost(obj, options, callback);
+    } else {
+      graphdb.jsonld.del(obj, options, function(err) {
+        if (err) {
+          return callback && callback(err);
+        }
+      });
+      doPost(obj, options, callback);
+    }
+  };
+
+  // Gets an object to Put and a check function which takes triples and returns a boolean.
+  // calls the callback function with a list of conflicting triples and a JSON-LD document without conflicts.
+  // That's a leaky abtraction (since we bring up triples in a JSON-LD world) and to address this we would ideally want
+  // a validation language (RDFS, OWL) to be used instead of a check function.
+
+  graphdb.jsonld.check = function(obj, options, checkfn, callback) {
+
+    if (typeof obj === 'string') {
+      obj = JSON.parse(obj);
+    }
+
+    if (callback === undefined && typeof checkfn == 'function') {
+      callback = checkfn;
+      checkfn = options;
+      options = {};
+    } else if (checkfn === undefined && callback === undefined) {
+      callback = options;
+      checkfn = function() { return true };
+      options = {};
+    }
+
+    options.base = ( obj["@context"] && obj["@context"]["@base"] ) || options.base || this.options.base;
+    options.overwrite = options.overwrite !== undefined ? options.overwrite : ( this.options.overwrite !== undefined ? this.options.overwrite : false );
+
+    var frame = { "@context": obj["@context"] };
+
+    // console.log("frame")
+    // console.log(JSON.stringify(frame,true,2))
+    jsonld.compact(frame, {}, function(err, compact_frame) {
+      if (err || compact_frame === null) {
+        return callback(err, compact_frame);
+      }
+      // console.log("compact_frame")
+      // console.log(JSON.stringify(compact_frame,true,2))
+
+      jsonld.compact(obj, {}, function(err, compacted) {
+        if (err) {
+          return callback && callback(err);
+        }
+        // console.log("compacted")
+        // console.log(JSON.stringify(compacted,true,2))
+        doCheck(compacted, options, checkfn, function(err, conflicts, checked, graph) {
+          if (err || checked === null) {
+            return callback(err, checked);
+          }
+          // console.log("checked")
+          // console.log(JSON.stringify(checked,true,2))
+          // console.log("conflicts")
+          // console.log(JSON.stringify(conflicts,true,2))
+
+          jsonld.frame(checked, frame, function(err, framed) {
+            if (err || framed === null) {
+              return callback(err, framed);
+            }
+            // console.log("framed")
+            // console.log(JSON.stringify(framed,true,2))
+            var context = frame["@context"] || {};
+
+            jsonld.compact(framed, context, options, function(err, compacted) {
+              // console.log("compacted")
+              // console.log(JSON.stringify(compacted,true,2))
+              var processed = graph ? Object.assign(compacted, { "@graph": graph } ) : compacted;
+              callback(null, conflicts, processed);
+            });
+          });
+        });
+      });
+    })
   };
 
   graphdb.jsonld.del = function(obj, options, callback) {
@@ -296,7 +731,6 @@ function levelgraphJSONLD(db, jsonldOpts) {
       doCut(obj, options, callback)
     }
   };
-
 
   graphdb.jsonld.cut = function(obj, options, callback) {
 
@@ -363,11 +797,11 @@ function levelgraphJSONLD(db, jsonldOpts) {
       return ( frame && frame["@embed"] !== "@never" || frame && frame["@embed"] === undefined )
             || frame === undefined
     }
-
     graphdb.get({ subject: iri }, function(err, triples) {
       if (err || triples.length === 0) {
         return callback(err, null);
       }
+      // console.log("get.triples", triples)
       async.reduce(triples, memo, function(acc, triple, cb) {
         var key;
 
@@ -433,29 +867,42 @@ function levelgraphJSONLD(db, jsonldOpts) {
       options = {};
     } else if (typeof context === 'function') {
       callback = context;
-      context = {};
       context = frame["@context"] || {};
       options = {};
     }
 
     options.base = ( frame["@context"] && frame["@context"]["@base"] ) || ( context && context["@base"] ) || options.base || this.options.base;
+    // console.log("iri", iri)
 
     if (typeof frame === 'string') {
       iri = frame
       frame = {};
-      frame["@id"] = options.base + iri;
-    } else {
-      iri = options.base + frame["@id"]
+      frame["@id"] = N3Util.isIRI(iri) ? iri : options.base + iri;
     }
+    // console.log("iri", iri)
 
-    jsonld.compact(frame, {}, function(err, compact_frame) {
-      if (err || compact_frame === null) {
-        return callback(err, compact_frame);
+    jsonld.compact(frame, {}, function(err, compacted) {
+      // console.log("compacted")
+      // console.log(JSON.stringify(compacted,true,2))
+      // console.log("iri", iri)
+      if (err || compacted === null) {
+        return callback(err, compacted);
+      } else if (Object.keys(compacted).length === 0) {
+        compacted = frame;
+        iri = N3Util.isIRI(frame["@id"]) ? frame["@id"] : options.base + frame["@id"];
+      } else if (compacted['@graph']) {
+        iri = compacted['@graph'][0]
+              ? compacted['@graph'][0]['@id'].match(options.base) ? compacted['@graph'][0]['@id'] : options.base + compacted['@graph'][0]['@id']
+              : compacted["@id"][0].match(options.base) ? compacted["@id"][0] : options.base + compacted["@id"][0]
+      } else {
+        iri = N3Util.isIRI(compacted["@id"]) ? compacted["@id"] : options.base + compacted["@id"]
       }
-      console.log("compact_frame")
-      console.log(JSON.stringify(compact_frame,true,2))
+      // console.log("iri", iri)
+      // console.log("frame", frame)
+      // console.log("context", context)
 
-      fetchExpandedTriples(iri, compact_frame, function(err, expanded) {
+
+      fetchExpandedTriples(iri, compacted, function(err, expanded) {
         if (err || expanded === null) {
           return callback(err, expanded);
         }
@@ -464,7 +911,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
         // console.log("frame")
         // console.log(JSON.stringify(frame,true,2))
         jsonld.frame(expanded, frame, function(err, framed) {
-          if (err || expanded === null) {
+          if (err || framed === null) {
             return callback(err, framed);
           }
           // console.log("framed")

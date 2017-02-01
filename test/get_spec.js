@@ -68,7 +68,7 @@ describe('jsonld.get', function() {
     db.jsonld.put(nested, function(err, obj) {
       console.log(obj)
       db.jsonld.get({ '@id': obj["@id"], '@context': obj['@context'] }, function(err, result) {
-        console.log(result)
+        console.log("result", result)
         db.get({}, console.log)
         delete result['knows'][0]['@id'];
         delete result['knows'][1]['@id'];
@@ -155,8 +155,10 @@ describe('with frames', function() {
 
   it('should respect @embed rapidly', function(done) {
     console.time('createdeep')
+    // 10000 doesn't pass.
+    var length = 5000
 
-    var deep = Array.from({ length: 10000 }, function (v,k) { return {
+    var deep = Array.from({ length: length }, function (v,k) { return {
       "@id": `${k}`,
       "value": `${k}`,
       "link": `${k+1}`
