@@ -308,4 +308,63 @@ describe('jsonld.put with default base', function() {
     })
   });
 
+
+
+  it('does not put atomically when ran in parallel', function(done) {
+    // i.e All the put complete before any get is done. So the first get will see all the puts.
+
+    var length = 5
+    var deep = Array.from({ length: length }, function (v,k) { return {
+      "@id": `${k}`,
+      "value": `${k}`,
+      "link": `a${k+1}`
+    }})
+
+    console.time('check atomically')
+
+    async.each(deep, function(triple,cb) {
+      console.time('put' + triple["@id"])
+      db.jsonld.put(Object.assign(triple,{
+          "@context": {
+            "link": {
+              "@id": "http://example.org/link#",
+              "@type": "@id"
+            },
+            "@base": "https://levelgraph.io/get/",
+            "@vocab": "http://example.org/vocab#"
+          }
+        }), /*{sync:true},*/ function (err, obj) {
+          if (err) console.log("Err", err)
+          console.timeEnd('put' + triple["@id"])
+          // console.log(triple)
+          console.time('get' + triple["@id"])
+          // setTimeout(function() {
+            console.log("get()", "https://levelgraph.io/get/" + triple["@id"])
+            db.jsonld.get("https://levelgraph.io/get/" + triple["@id"], {
+              "link": {
+                "@id": "http://example.org/link#",
+                "@type": "@id"
+              },
+              "@base": "https://levelgraph.io/get/",
+              "@vocab": "http://example.org/vocab#"
+            }, { base: "https://levelgraph.io/get/"}, function(err, obj) {
+              console.timeEnd('get' + triple["@id"])
+              if (err) console.log(err)
+              db.get({}, function(err, triples) {
+                expect(triples).to.have.length(10);
+                cb();
+              });
+              // console.log("obj", JSON.stringify(obj,true,2));
+              // expect(obj["http://example.org/vocab#value"]).to.eql(triple["value"] );
+              // cb();
+            })
+          // }, 10)
+      })
+    }, function(err) {
+      if (err) console.log(err)
+      console.timeEnd('check atomically')
+      done();
+    })
+  });
+
 });
