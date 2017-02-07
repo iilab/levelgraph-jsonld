@@ -795,19 +795,13 @@ function levelgraphJSONLD(db, jsonldOpts) {
     }
     return coerced;
   }
-  var depth;
 
   function fetchExpandedTriples(iri, frame, callback) {
-    depth++;
     var memo = {};
     if (typeof frame === 'function') {
       callback = frame;
       frame = {};
     }
-    debugger;
-    var dpth = Array(depth).join(">");
-    console.log(dpth + "fetchExpandedTriples.iri", iri)
-    // console.time(dpth + "fetchExpandedTriples / " + iri)
     function followFrame(triple, frame) {
       return ( frame && frame["@embed"] !== "@never" || frame && frame["@embed"] === undefined )
             || frame === undefined
@@ -816,9 +810,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
       if (err || triples.length === 0) {
         return callback(err, null);
       }
-      // console.log("get.triples", triples)
       async.reduce(triples, memo, function(acc, triple, cb) {
-        // console.log("reduce.acc", acc)
         var key;
 
         if (!acc[triple.subject] && !N3Util.isBlank(triple.subject)) {
@@ -871,12 +863,8 @@ function levelgraphJSONLD(db, jsonldOpts) {
           });
         }
       }, function(err, result) {
-        console.log(dpth + "callback.iri", iri)
-         return callback(err, result);
-        // return process.nextTick(callback);
+        return callback(err, result);
       });
-      // console.timeEnd(dpth + "fetchExpandedTriples / " + iri)
-      // console.trace();
     });
   }
 
@@ -893,19 +881,14 @@ function levelgraphJSONLD(db, jsonldOpts) {
     }
 
     options.base = ( frame["@context"] && frame["@context"]["@base"] ) || ( context && context["@base"] ) || options.base || this.options.base;
-    // console.log("iri", iri)
 
     if (typeof frame === 'string') {
       iri = frame
       frame = {};
       frame["@id"] = N3Util.isIRI(iri) ? iri : options.base + iri;
     }
-    // console.log("iri", iri)
 
     jsonld.compact(frame, {}, function(err, compacted) {
-      // console.log("compacted")
-      // console.log(JSON.stringify(compacted,true,2))
-      // console.log("iri", iri)
       if (err || compacted === null) {
         return callback(err, compacted);
       } else if (Object.keys(compacted).length === 0) {
@@ -918,26 +901,15 @@ function levelgraphJSONLD(db, jsonldOpts) {
       } else {
         iri = N3Util.isIRI(compacted["@id"]) ? compacted["@id"] : options.base + compacted["@id"]
       }
-      console.log("get.iri", iri)
-      // console.log("frame", frame)
-      // console.log("context", context)
 
-      depth = 0;
       fetchExpandedTriples(iri, compacted, function(err, expanded) {
-        depth = 0;
         if (err || expanded === null) {
           return callback(err, expanded);
         }
-        // console.log("expanded")
-        // console.log(JSON.stringify(expanded,true,2))
-        // console.log("frame")
-        // console.log(JSON.stringify(frame,true,2))
         jsonld.frame(expanded, frame, function(err, framed) {
           if (err || framed === null) {
             return callback(err, framed);
           }
-          // console.log("framed")
-          // console.log(JSON.stringify(framed,true,2))
           jsonld.compact(framed, context, options, callback);
         });
       });
