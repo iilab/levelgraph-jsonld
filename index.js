@@ -4,7 +4,10 @@ var jsonld = require('jsonld'),
     RDFLANGSTRING = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#langString',
     XSDTYPE = 'http://www.w3.org/2001/XMLSchema#',
     async = require('async'),
+    deasync = require('deasync'),
     N3Util = require('n3/lib/N3Util'); // with browserify require('n3').Util would bundle more then needed!
+
+// require('longjohn')
 
 function levelgraphJSONLD(db, jsonldOpts) {
 
@@ -16,6 +19,12 @@ function levelgraphJSONLD(db, jsonldOpts) {
 
   jsonldOpts = jsonldOpts || {};
   jsonldOpts.base = jsonldOpts.base || '';
+
+  jsonld.documentLoader = function(url, callback) {
+    // noop loader
+    console.log("documentLoader.url", url)
+    return callback();
+  };
 
   graphdb.jsonld = {
       options: jsonldOpts
@@ -382,7 +391,7 @@ function levelgraphJSONLD(db, jsonldOpts) {
             store_keys = ['subject', 'predicate', 'object', 'graph'];
           }
 
-          async.reduce(triples[graph_key].map(function(triple) {
+          var list = triples[graph_key].map(function(triple) {
 
             return store_keys.reduce(function(acc, key) {
               if(key === 'graph') {
@@ -417,7 +426,9 @@ function levelgraphJSONLD(db, jsonldOpts) {
               }
               return acc;
             }, {});
-          }), {}, function(ret, triple, cb) {
+          })
+
+          async.reduce(list, {}, function(ret, triple, cb) {
             // console.log("triple", triple)
             var checked = checkfn(triple);
             if (checked === true) {
@@ -427,12 +438,12 @@ function levelgraphJSONLD(db, jsonldOpts) {
               } else {
                 ret[triple.subject][triple.predicate] = [triple.object];
               }
-              cb(null, ret);
+              return cb(null, ret);
             } else if (typeof checked === 'object') {
               ret[triple.subject] = ret[triple.subject] ? ret[triple.subject] : { '@id': triple.subject };
               graphdb.get(checked, function(err, results) {
                 // console.log("err", err)
-                if (err) cb(err)
+                if (err) return cb(err)
                 // console.log("dynamic check : ", checked)
                 // console.log("validated triple: " + JSON.stringify(triple,true,2))
                 // console.log("results : ", results)
@@ -443,25 +454,24 @@ function levelgraphJSONLD(db, jsonldOpts) {
                     ret[triple.subject][triple.predicate] = [triple.object];
                   }
                   // console.log("ret", ret)
-                  cb(null, ret);
                 } else {
                   // console.log("conflict", triple)
                   conflicts.push(triple);
-                  cb(null, ret);
                 }
+                return cb(null, ret);
               });
             } else {
               // console.log("fails doPut check: " + result)
               // console.log("failed triple: " + JSON.stringify(triple,true,2))
               // console.log("conflict", triple)
               conflicts.push(triple);
-              cb(null, ret);
+              return cb(null, ret);
             }
           }, function(err, result) {
-            if (err) cbGraph(err)
+            if (err) return cbGraph(err)
             // console.log("result", result)
             ret[graph_key] = result
-            cbGraph()
+            return cbGraph()
           });
         }, function(err) {
           if (err) callback(err,null)
