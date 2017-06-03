@@ -16,12 +16,16 @@ describe('jsonld.put data type', function() {
     it('preserves boolean true', function(done) {
       bbb.isFamilyFriendly = true;
       db.jsonld.put(bbb, function() {
-        db.get({
-          predicate: 'http://schema.org/isFamilyFriendly'
-        }, function(err, triples) {
-          expect(triples[0].object).to.equal('"true"^^http://www.w3.org/2001/XMLSchema#boolean');
-          done();
+        db.get({}, (err, triples) => {
+          // console.log('triples', triples)
+          db.get({
+            predicate: 'http://schema.org/isFamilyFriendly'
+          }, function(err, triples) {
+            expect(triples[0].object).to.equal('"true"^^http://www.w3.org/2001/XMLSchema#boolean');
+            done();
+          });
         });
+
       });
     });
 
@@ -201,11 +205,14 @@ describe('jsonld.get data type', function() {
 
       db.jsonld.put(bbb, function() {
         db.put(triple, function() {
-          db.jsonld.get(bbb['@id'], bbb['@context'], function(err, doc) {
-            expect(doc['isFamilyFriendly']).to.be.true;
-            done();
+          db.get({}, (err, triples) => {
+            // console.log('triples', triples)
+            db.jsonld.get(bbb['@id'], bbb['@context'], function(err, doc) {
+              expect(doc['isFamilyFriendly']).to.be.true;
+              done();
+            });
           });
-        });
+        })
       });
     });
 

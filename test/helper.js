@@ -426,7 +426,7 @@ var getFixture = function(name) {
           "source": "http://example.org/"
         }
       ]
-    }
+    },
     "named_graph.json": {
       "@context": {
         "generatedAt": {
@@ -1126,6 +1126,40 @@ var getFixture = function(name) {
           }
         }
       ]
+    },
+    "list.json": {
+      "@context": {
+        "@vocab": "http://xmlns.com/foaf/0.1/"
+      },
+      "@id": "http://example.org/people#joebob",
+      "nick":
+      {
+        "@list": [ "joe", "bob", "jaybee" ]
+      }
+    },
+    "multi_graphs.json": {
+      "@graph": [
+      {
+        "@id": "http://example.org/graphs/1",
+        "@graph": {
+          "@id": "http://example.org/people/gavin",
+          "http://example.com/vocab#name": "Gavin"
+        }
+      },
+      {
+        "@id": "http://example.org/graphs/2",
+        "@graph": {
+          "@id": "http://example.org/people/manu",
+          "http://example.com/vocab#name": "Manu"
+        }
+      },
+      {
+        "@id": "http://example.org/graphs/3",
+        "@graph": {
+          "@id": "http://example.org/people/Lehn",
+          "http://example.com/vocab#name": "Lehn"
+        }
+      }]
     }
   };
   return fixtures[name];

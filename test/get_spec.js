@@ -70,8 +70,9 @@ describe('jsonld.get', function() {
       db.jsonld.get({ '@id': obj["@id"], '@context': obj['@context'] }, function(err, result) {
         // console.log("result", result)
         // db.get({}, console.log)
-        delete result['knows'][0]['@id'];
-        delete result['knows'][1]['@id'];
+        expect(result['knows']).to.deep.have.members(nested['knows']);
+        delete result['knows']
+        delete nested['knows']
         expect(result).to.eql(nested);
         done();
       });
@@ -156,7 +157,7 @@ describe('with frames', function() {
   it('should respect @embed rapidly', function(done) {
     // console.time('createdeep')
     // 10000 doesn't pass.
-    var length = 5000
+    var length = 1000
 
     var deep = Array.from({ length: length }, function (v,k) { return {
       "@id": `${k}`,
@@ -165,7 +166,7 @@ describe('with frames', function() {
     }})
 
     // console.timeEnd('createdeep')
-    // console.time('put')
+    console.time('put')
 
     db.jsonld.put({
         "@context": {
@@ -178,10 +179,10 @@ describe('with frames', function() {
         },
         "@graph": deep
       }, function (err, obj) {
-        // console.timeEnd('put')
+        console.timeEnd('put')
       // console.log("obj")
       // console.log(JSON.stringify(obj,true,2))
-      // console.time('get')
+      console.time('get')
       db.jsonld.get({
         "@context": {
           "link": {
@@ -198,7 +199,7 @@ describe('with frames', function() {
           "@embed": "@never"
         }
       }, function(err, obj) {
-        // console.timeEnd('get')
+        console.timeEnd('get')
         // console.log("get result");
         // console.log(JSON.stringify(obj,true,2));
         expect(obj["link"]).to.eql("1");
@@ -298,7 +299,7 @@ describe('with frames', function() {
         }
       }, function(err, obj) {
         console.log("get result");
-        console.log(JSON.stringify(obj,true,2));
+        // console.log(JSON.stringify(obj,true,2));
         db.get({}, function(err, triples) {
           // console.log(triples);
           done() })
